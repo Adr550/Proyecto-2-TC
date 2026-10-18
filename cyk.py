@@ -1,110 +1,111 @@
-"""Reconocimiento de cadenas mediante el algoritmo CYK."""
+"""CYK por palabras con referencias para reconstruir un árbol."""
 
 
-def cyk(gramatica, inicial, cadena):
+def cyk(gramatica, inicial, palabras):
     """Devuelve (aceptada, tabla).
 
-    La gramática debe estar en forma normal de Chomsky.
-    tabla[i][j] contiene las variables que generan cadena[i:j + 1].
+    Cada celda es un diccionario:
+        variable -> referencia de derivación
+
+    Referencia terminal:
+        (palabra,)
+
+    Referencia binaria:
+        (posición_del_corte, variable_izquierda, variable_derecha)
     """
+    if isinstance(palabras, str):
+        raise ValueError(
+            "CYK espera una lista de palabras, no un texto."
+        )
+
     terminales = {}
     binarias = {}
 
-    # Crear índices para consultar las reglas rápidamente.
     for variable, producciones in gramatica.items():
         for produccion in producciones:
-            if len(produccion) == 0:
+            if not produccion:
                 if variable != inicial:
                     raise ValueError(
-                        "Solo el símbolo inicial puede producir épsilon."
+                        "Épsilon fuera del símbolo inicial."
                     )
 
-            elif len(produccion) == 1:
-                terminal = produccion[0]
+            elif (
+                len(produccion) == 1
+                and produccion[0] not in gramatica
+            ):
+                terminales.setdefault(
+                    produccion[0], set()
+                ).add(variable)
 
-                if terminal in gramatica or len(terminal) != 1:
-                    raise ValueError(
-                        f"Producción fuera de Chomsky: "
-                        f"{variable} → {produccion}"
-                    )
-
-                terminales.setdefault(terminal, set()).add(variable)
-
-            elif len(produccion) == 2:
-                if any(s not in gramatica for s in produccion):
-                    raise ValueError(
-                        f"Producción fuera de Chomsky: "
-                        f"{variable} → {produccion}"
-                    )
-
-                if inicial in produccion:
-                    raise ValueError(
-                        "El símbolo inicial no debe aparecer "
-                        "en el lado derecho."
-                    )
-
-                binarias.setdefault(tuple(produccion), set()).add(variable)
+            elif (
+                len(produccion) == 2
+                and all(s in gramatica for s in produccion)
+                and inicial not in produccion
+            ):
+                binarias.setdefault(
+                    tuple(produccion), set()
+                ).add(variable)
 
             else:
                 raise ValueError(
-                    f"Producción fuera de Chomsky: "
+                    f"Regla fuera de Chomsky: "
                     f"{variable} → {produccion}"
                 )
 
-    if cadena == "":
+    cantidad = len(palabras)
+
+    if cantidad == 0:
         return () in gramatica.get(inicial, []), []
 
-    longitud = len(cadena)
     tabla = [
-        [set() for _ in range(longitud)]
-        for _ in range(longitud)
+        [{} for _ in range(cantidad)]
+        for _ in range(cantidad)
     ]
 
-    # Subcadenas de un carácter.
-    for indice, caracter in enumerate(cadena):
-        tabla[indice][indice].update(
-            terminales.get(caracter, set())
-        )
+    # Caso base: subfrases de una palabra.
+    for indice, palabra in enumerate(palabras):
+        for variable in sorted(
+            terminales.get(palabra, set())
+        ):
+            tabla[indice][indice][variable] = (palabra,)
 
-    # Subcadenas de longitud 2, 3, ..., n.
-    for tamanio in range(2, longitud + 1):
-        for inicio in range(longitud - tamanio + 1):
-            fin = inicio + tamanio - 1
+    # Construcción de soluciones a partir de subfrases menores.
+    for longitud in range(2, cantidad + 1):
+        for inicio in range(cantidad - longitud + 1):
+            fin = inicio + longitud - 1
 
             for corte in range(inicio, fin):
-                izquierda = tabla[inicio][corte]
-                derecha = tabla[corte + 1][fin]
-
-                for variable_izquierda in izquierda:
-                    for variable_derecha in derecha:
-                        tabla[inicio][fin].update(
-                            binarias.get(
-                                (variable_izquierda, variable_derecha),
-                                set(),
-                            )
+                for izquierda in tabla[inicio][corte]:
+                    for derecha in tabla[corte + 1][fin]:
+                        variables = binarias.get(
+                            (izquierda, derecha), set()
                         )
 
-    aceptada = inicial in tabla[0][longitud - 1]
+                        for variable in sorted(variables):
+                            # Guardamos una derivación por variable.
+                            tabla[inicio][fin].setdefault(
+                                variable,
+                                (corte, izquierda, derecha),
+                            )
+
+    aceptada = inicial in tabla[0][cantidad - 1]
     return aceptada, tabla
 
 
-def mostrar_tabla(cadena, tabla):
-    """Muestra las celdas agrupadas por longitud de subcadena."""
+def mostrar_tabla(palabras, tabla):
     print("\nTabla CYK:")
 
-    if not cadena:
-        print("La cadena vacía se verifica con la regla inicial → ε.")
-        return
+    for longitud in range(1, len(palabras) + 1):
+        for inicio in range(len(palabras) - longitud + 1):
+            fin = inicio + longitud - 1
 
-    for tamanio in range(1, len(cadena) + 1):
-        print(f"\nSubcadenas de longitud {tamanio}:")
-
-        for inicio in range(len(cadena) - tamanio + 1):
-            fin = inicio + tamanio - 1
-            variables = ", ".join(sorted(tabla[inicio][fin]))
-            contenido = "{" + variables + "}" if variables else "∅"
+            variables = (
+                ", ".join(sorted(tabla[inicio][fin]))
+                or "∅"
+            )
+            texto = " ".join(palabras[inicio:fin + 1])
 
             print(
-                f"  [{inicio}, {fin}] "
-                f"{cadena[inicio:fin + 1]!r}: {contenido}"
+                f"[{inicio}, {fin}] "
+                f"{texto!r}: {variables}"
             )

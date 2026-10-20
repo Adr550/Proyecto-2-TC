@@ -1,6 +1,8 @@
-"""Simplificación, Chomsky y CYK para frases en inglés."""
+"""Análisis de frases con explicación de las reglas utilizadas."""
 
 import argparse
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from time import perf_counter
 
@@ -14,21 +16,7 @@ from chomsky import convertir_a_chomsky
 from entrada import tokenizar_frase
 from cyk import cyk, mostrar_tabla
 from arbol import construir_arbol, mostrar_arbol
-
-
-def mostrar_gramatica(titulo, gramatica):
-    print(f"\n{titulo}")
-
-    if not gramatica:
-        print("∅")
-
-    for variable, producciones in gramatica.items():
-        alternativas = [
-            " ".join(p) if p else "ε"
-            for p in producciones
-        ]
-        derecha = " | ".join(alternativas) or "∅"
-        print(f"{variable} → {derecha}")
+from explicar_chomsky import explicar_chomsky
 
 
 def main():
@@ -40,17 +28,14 @@ def main():
         nargs="?",
         type=Path,
         default=Path(__file__).with_name("gramatica.txt"),
+        help="Archivo de la gramática.",
     )
     parser.add_argument(
         "-c",
         "--cadena",
         "--frase",
         dest="frase",
-    )
-    parser.add_argument(
-        "--pasos",
-        action="store_true",
-        help="Muestra las etapas de simplificación y Chomsky.",
+        help="Frase que se analizará.",
     )
     parser.add_argument(
         "--tabla",
@@ -60,15 +45,26 @@ def main():
     argumentos = parser.parse_args()
 
     try:
+        # Primero solicitar la oración.
+        frase = argumentos.frase
+
+        if frase is None:
+            frase = input(
+                "Ingresa una frase en inglés: "
+            )
+
+        palabras = tokenizar_frase(frase)
+
+        print(
+            "\nFrase normalizada:",
+            " ".join(palabras) if palabras else "ε",
+        )
+
+        # Preparar la gramática.
         gramatica, anulables = cargar_gramatica(
             argumentos.archivo
         )
         inicial = next(iter(gramatica))
-
-        if argumentos.pasos:
-            mostrar_gramatica(
-                "Gramática original:", gramatica
-            )
 
         sin_epsilon = remover_epsilons(
             gramatica, anulables
@@ -81,38 +77,29 @@ def main():
             sin_inutiles, inicial
         )
 
-        cnf, nuevo_inicial = convertir_a_chomsky(
-            simplificada,
-            inicial,
-            acepta_vacia=acepta_vacia,
-        )
+        # Ocultar los mensajes generales de la conversión.
+        with redirect_stdout(StringIO()):
+            cnf, nuevo_inicial = convertir_a_chomsky(
+                simplificada,
+                inicial,
+                acepta_vacia=acepta_vacia,
+            )
 
-        if argumentos.pasos:
-            for titulo, etapa in (
-                ("Sin épsilon:", sin_epsilon),
-                ("Sin unarias:", sin_unarias),
-                ("Sin inútiles:", sin_inutiles),
-                ("Sin inalcanzables:", simplificada),
-                ("Forma normal de Chomsky:", cnf),
-            ):
-                mostrar_gramatica(titulo, etapa)
-
-        frase = argumentos.frase
-
-        if frase is None:
-            frase = input("Ingresa una frase en inglés: ")
-
-        palabras = tokenizar_frase(frase)
-
+        # Analizar la oración.
         inicio_tiempo = perf_counter()
 
         aceptada, tabla = cyk(
-            cnf, nuevo_inicial, palabras
+            cnf,
+            nuevo_inicial,
+            palabras,
         )
 
         segundos = perf_counter() - inicio_tiempo
 
-        print("\nSÍ" if aceptada else "\nNO")
+        print(
+            "\nResultado:",
+            "SÍ" if aceptada else "NO",
+        )
         print(
             f"Tiempo de CYK: {segundos * 1000:.6f} ms"
         )
@@ -121,20 +108,52 @@ def main():
             mostrar_tabla(palabras, tabla)
 
         if aceptada:
-            print(
-                "\nÁrbol de análisis "
-                "(gramática Chomsky):"
-            )
             arbol = construir_arbol(
                 tabla,
                 nuevo_inicial,
                 len(palabras),
             )
+
+            # Explicar solo las reglas usadas para esta oración.
+            explicar_chomsky(arbol)
+
+            print("\nÁrbol de análisis:")
             mostrar_arbol(arbol)
+
         else:
             print(
-                "No hay árbol de análisis para esta frase."
+                "\nNo existe una derivación completa "
+                "para esta oración con la gramática."
             )
+
+            vocabulario = {
+                produccion[0]
+                for producciones in cnf.values()
+                for produccion in producciones
+                if len(produccion) == 1
+                and produccion[0] not in cnf
+            }
+
+            desconocidas = sorted(
+                set(palabras) - vocabulario
+            )
+
+            if desconocidas:
+                print(
+                    "Palabras fuera del vocabulario:",
+                    ", ".join(desconocidas),
+                )
+            elif not palabras:
+                print(
+                    "La gramática no permite "
+                    "la cadena vacía."
+                )
+            else:
+                print(
+                    "Las palabras están en el vocabulario, "
+                    "pero su combinación no está permitida "
+                    "por las reglas."
+                )
 
         return aceptada
 

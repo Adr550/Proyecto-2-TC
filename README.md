@@ -1,41 +1,82 @@
-# Proyecto-2-TC
+# Proyecto 2 — Analizador de frases con CYK
 
-Ejecutar desde la carpeta del proyecto:
+Determina si una frase pertenece al lenguaje de una gramática.
+Muestra SÍ o NO, el tiempo de CYK y, si se acepta, una explicación
+de las reglas utilizadas y un árbol de análisis.
 
-```sh
-python3 main.py
+## Ejecución
+
+Requiere Python 3.8 o superior, sin dependencias externas.
+
+```powershell
+python main.py
 ```
 
-También se puede indicar otro archivo:
+Para ingresar la frase directamente y mostrar la tabla:
 
-```sh
-python3 main.py otra_gramatica.txt
+```powershell
+python main.py --frase "we drink water" --tabla
 ```
 
-`main.py` muestra cada etapa: eliminación de épsilon, de producciones unarias,
-de variables no generadoras y de variables inalcanzables. El símbolo inicial
-es el primer lado izquierdo del archivo y se conserva como referencia durante
-todo el proceso, incluso si resulta no generador.
+## Diseño de la aplicación
 
-- `remover_epsilon.py`: lectura, identificación de símbolos y eliminación de épsilon.
-- `remover_unarias.py`: eliminación de unarias, inútiles e inalcanzables.
+El procesamiento sigue este flujo:
 
-Las funciones reciben un diccionario `{no_terminal: [producciones]}` y devuelven
-un diccionario nuevo. `remover_epsilons` también completa la lista de anulables.
-Una producción es unaria si contiene un único **no terminal**; `A → a` permanece.
-Las cadenas y ciclos de unarias se resuelven calculando las variables alcanzables.
-Primero se eliminan las variables que no generan palabras terminales, y luego
-las que no pueden alcanzarse desde el símbolo inicial.
+```text
+Frase → Normalización
+Gramática → Simplificación → Chomsky
+                     ↓
+                    CYK
+                     ↓
+        Resultado, tiempo y árbol
+```
 
-Se usa la flecha `→` y `|` para separar alternativas; se aceptan `ϵ` y `ε`.
-Como en la entrada original, los espacios son decorativos: `N P` se normaliza a
-`NP`. Los nombres de no terminales empiezan en mayúscula. Cuando un nombre es
-prefijo de otro, se reconoce primero el más largo (`NP`, `VP`, `Det`).
-Así, `S → N P V P` representa `S → NP VP`.
+La simplificación elimina épsilon, reglas unarias, variables
+no generadoras e inalcanzables. La conversión a Chomsky prepara
+las reglas para CYK.
 
-Se mantiene la convención del eliminador original: se elimina épsilon incluso
-si lo genera el símbolo inicial. Por ello, la gramática resultante representa
-el lenguaje original sin la palabra vacía; si solo generaba épsilon, queda vacía.
+CYK utiliza programación dinámica: guarda qué variables generan
+cada subfrase y combina esos resultados hasta analizar la frase
+completa. También guarda referencias para reconstruir un árbol.
 
-No se necesitan dependencias externas. Importar los módulos no lee archivos ni
-imprime resultados. `main.py` encuentra su `gramatica.txt` desde cualquier carpeta.
+Los módulos separan la lectura y simplificación, la conversión
+a Chomsky, el análisis CYK y la presentación del resultado.
+
+## Discusión
+
+Los principales obstáculos fueron reconocer palabras completas
+como terminales, conservar la separación entre variables como
+NP y VP, y reconstruir el árbol desde la tabla CYK.
+
+Se utilizaron tuplas para representar las producciones y
+referencias de derivación para construir el árbol.
+
+El programa comprueba la estructura según la gramática,
+pero no el significado ni la concordancia. Por ejemplo,
+`he run` se acepta con la gramática actual.
+
+Se recomienda ampliar la gramática, incorporar concordancia
+y agregar pruebas automatizadas. La explicación mostrada
+corresponde a las reglas usadas para reconocer la frase,
+no a todas las transformaciones de Chomsky.
+
+## Ejemplos y pruebas realizadas
+
+Resultados verificados con la gramática actual:
+
+| Frase | Resultado |
+|---|---|
+| i eat pizza | SÍ |
+| we drink water | SÍ |
+| they order a coffee | SÍ |
+| you eat pasta with cheese | SÍ |
+| we eat pizza in the restaurant | SÍ |
+| i pizza eat | NO |
+| we drink the | NO |
+| you order cake | NO |
+| eat pizza | NO |
+| Cadena vacía | NO |
+
+Los rechazos corresponden a estructuras incompletas, orden
+incorrecto o palabras fuera del vocabulario. Los resultados
+pueden cambiar si se modifica `gramatica.txt`.
